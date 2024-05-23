@@ -3,7 +3,7 @@ import axios from 'axios';
 import moment from 'moment';
 import DatePicker from 'react-datepicker';
 import { AgChartsReact } from 'ag-charts-react';
-import { Box, Button, CircularProgress, IconButton, InputBase, Paper, Stack } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, InputBase, MenuItem, Paper, Select, Stack } from '@mui/material';
 
 import SearchIcon from '@mui/icons-material/Search';
 import logo from 'assets/images/icons/tbLogo.png';
@@ -12,8 +12,9 @@ import 'react-datepicker/dist/react-datepicker.css';
 
 const LinearRegression = () => {
     const dayInMills = 1000 * 60 * 60 * 24;
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [symbol, setSymbol] = useState("AAPL");
+    const [interval, setMyInterval] = useState('30min');
     const [startDate, setStartDate] = useState(moment().subtract(30, 'days').toDate());
     const [endDate, setEndDate] = useState(new Date());
     const [dates, setDates] = useState([]);
@@ -27,7 +28,7 @@ const LinearRegression = () => {
             url: 'https://alpha-vantage.p.rapidapi.com/query',
             params: {
                 time_period: 5,
-                interval: '30min',
+                interval: interval,
                 series_type: 'close',
                 function: 'SMA',
                 symbol: `${symbol}`,
@@ -47,23 +48,33 @@ const LinearRegression = () => {
         }
     };
 
-    // const findPeaks = (data, prominence) => {
-    //     const peaks = [];
-    //     for (let i = 1; i < data.length - 1; i++) {
-    //         if (data[i] > data[i - 1] && data[i] > data[i + 1]) {
-    //             const left = data.slice(0, i).reverse().find(d => d > data[i] - prominence);
-    //             const right = data.slice(i + 1).find(d => d > data[i] - prominence);
-    //             if (left === undefined || right === undefined) {
-    //                 peaks.push(i);
-    //             }
-    //         }
-    //     }
-    //     return peaks;
-    // }
+    const findPeaks = (allDates, data, threshold) => {
+        const res = [];
+        let cur = data[0];
+        res.push(0);
+        for (let i = 0; i < data.length; i++) {
+            if (res.length >= 2 && data[res[res.length - 2]] > data[res[res.length - 1]] && data[res[res.length - 1]] > data[i])
+                res[res.length - 1] = i, cur = data[i];
+            if (res.length >= 2 && data[res[res.length - 2]] < data[res[res.length - 1]] && data[res[res.length - 1]] < data[i])
+                res[res.length - 1] = i, cur = data[i];
+            else if (Math.abs(data[i] - cur) > threshold) {
+                cur = data[i];
+                res.push(i)
+            }
+        }
+        if (new Date(allDates[allDates.length - 1]).getDate() - new Date(allDates[res[res.length - 1]]).getDate() < 2) {
+            res.pop();
+            res.push(data.length - 1);
+        } else {
+            res.push(data.length - 1);
+        }
+        return res;
+    }
 
     useEffect(() => {
+        setLoading(true);
         fetchData();
-    }, []);
+    }, [interval]);
 
     useEffect(() => {
         let dateItems = [];
@@ -79,6 +90,7 @@ const LinearRegression = () => {
             }
         }
         setDates(dateItems);
+        setLoading(true);
         fetchData();
     }, [startDate, endDate]);
 
@@ -102,48 +114,31 @@ const LinearRegression = () => {
                 return null;
             }).filter(item => item !== null).reverse();
 
-            const peekDates = [1713556800000, 1714415400000, 1714568400000, 1714771800000, 1714771800000, 1715031000000, allDates[allDates.length - 1]];
-            const peekInfo = Object.entries(stockData).map(([key, value]) => {
-                if (peekDates.includes(new Date(key).getTime())) {
-                    return {
-                        date: new Date(key).getTime(),
-                        SMA: parseFloat(value.SMA),
-                    };
+            const SMS = Object.entries(stockData).map(([key, value]) => {
+                if (dates.includes(key.split(" ")[0])) {
+                    return parseFloat(value.SMA)
                 }
                 return null;
-            }).filter(item => item !== null).reverse().map((item, index) => ({ ...item, index }));
-            // const SMS = Object.entries(stockData).map(([key, value]) => {
-            //     if (dates.includes(key.split(" ")[0])) {
-            //         return parseFloat(value.SMA)
-            //     }
-            //     return null;
-            // }).filter(item => item !== null).reverse();
+            }).filter(item => item !== null).reverse();
 
-            // const extremelySignificantMaximaIndices = findPeaks(SMS, 0.03);
-            // const extremelySignificantMinimaIndices = findPeaks(SMS.map(s => -s), 0.03);
+            const maxSMS = SMS.reduce((max, current) => Math.max(max, current), -Infinity);
+            const minSMS = SMS.reduce((min, current) => Math.min(min, current), Infinity);
+            const threshold = (maxSMS - minSMS) / 10;
+            const allSignificiantIndicies = findPeaks(allDates, SMS, threshold);
 
-            // const extremelySignificantMaximaDates = extremelySignificantMaximaIndices.map((i) => allDates.at(i));
-            // const extremelySignificantMaximaSMS = extremelySignificantMaximaIndices.map((i) => SMS.at(i));
-            // const extremelySignificantMinimaDates = extremelySignificantMinimaIndices.map((i) => allDates.at(i));
-            // const extremelySignificantMinimaSMS = extremelySignificantMinimaIndices.map((i) => SMS.at(i));
+            const extremelySignificiantDates = allSignificiantIndicies.map((i) => allDates.at(i));
+            const extremelySignificiantSMS = allSignificiantIndicies.map((i) => SMS.at(i));
 
-            // const firstPointDate = new Date(allDates[0]).getTime();
-            // const firstPointSMS = SMS[0];
-            // const lastPointDate = new Date(allDates[allDates.length - 1]).getTime();
-            // const lastPointSMS = SMS[SMS.length - 1];
+            const sortedIndices = extremelySignificiantDates.map((date, i) => [date, extremelySignificiantSMS[i]])
+                .sort((a, b) => a[0] - b[0]);
 
-            // const allExtremelySignificantDates = [firstPointDate, ...extremelySignificantMaximaDates, ...extremelySignificantMinimaDates, lastPointDate];
-            // const allExtremelySignificantSMS = [firstPointSMS, ...extremelySignificantMaximaSMS, ...extremelySignificantMinimaSMS, lastPointSMS];
+            const prepareSortedIndicesData = () => {
+                return sortedIndices.map(([date, SMA], index) => ({ date, SMA, index }));
+            };
 
-            // const sortedIndices = allExtremelySignificantDates.map((date, i) => [date, allExtremelySignificantSMS[i]])
-            //     .sort((a, b) => a[0] - b[0]);
-
-            // const prepareSortedIndicesData = () => {
-            //     return sortedIndices.map(([date, SMA]) => ({ date, SMA }));
-            // };
             setLoading(false);
             setChartData(chart);
-            setRegressionChartData(peekInfo);
+            setRegressionChartData(prepareSortedIndicesData());
         }
     }, [stockData]);
 
@@ -170,6 +165,23 @@ const LinearRegression = () => {
                     <div style={{ display: 'flex' }}>
                         <DatePicker className="stockdatepicker" selected={startDate} onChange={(date) => setStartDate(date)} />
                         <DatePicker className="stockdatepicker" selected={endDate} onChange={(date) => setEndDate(date)} />
+                        <Select
+                            value={interval}
+                            onChange={(e) => {
+                                setMyInterval(e.target.value);
+                            }}
+                            sx={{
+                                '& .MuiSelect-icon': { color: '#bdbdbd' },
+                                color: '#bdbdbd'
+                            }}
+                        >
+                            <MenuItem value="5min">5 minutes</MenuItem>
+                            <MenuItem value="30min">30 minutes</MenuItem>
+                            <MenuItem value="60min">1 hour</MenuItem>
+                            <MenuItem value="daily">Daily</MenuItem>
+                            <MenuItem value="weekly">Weekly</MenuItem>
+                            <MenuItem value="monthly">Monthly</MenuItem>
+                        </Select>
                     </div>
                     <Box sx={{ marginLeft: '30px', marginRight: '30px' }}>
                         <Stack direction="row" justifyContent="flex-end" alignItems="baseline" spacing={2}>
@@ -217,9 +229,6 @@ const LinearRegression = () => {
                             options={{
                                 autoSize: true,
                                 data: [],
-                                title: {
-                                    text: 'SMA Values by Date',
-                                },
                                 series: [
                                     {
                                         type: 'line',
@@ -252,7 +261,6 @@ const LinearRegression = () => {
                                                 const currentIndex = params.datum.index;
                                                 const previousDatum = currentIndex > 0 ? regressionChartData[currentIndex - 1] : null;
                                                 const doublePreviousDatum = currentIndex > 1 ? regressionChartData[currentIndex - 2] : null;
-
                                                 if (currentIndex > 1) {
                                                     if (previousDatum !== null && doublePreviousDatum !== null) {
                                                         if (params.datum.SMA - previousDatum.SMA > 0) {
@@ -288,7 +296,7 @@ const LinearRegression = () => {
                                         type: 'number',
                                         position: 'left',
                                         title: {
-                                            text: 'SMA',
+                                            text: '',
                                             color: '#D1D4DC'
                                         },
                                         label: {
